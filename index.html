@@ -486,6 +486,16 @@ const heartPath = new Path2D();
 heartOutline.forEach((p, i) => i === 0 ? heartPath.moveTo(p.x, -p.y) : heartPath.lineTo(p.x, -p.y));
 heartPath.closePath();
 
+/* unit heart (±16 wide) — the badge shape behind each flying word */
+const badgeHeart = new Path2D();
+for (let k = 0; k <= 72; k++) {
+  const t = (k / 72) * Math.PI * 2;
+  const x = 16 * Math.pow(Math.sin(t), 3);
+  const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+  k === 0 ? badgeHeart.moveTo(x, -y) : badgeHeart.lineTo(x, -y);
+}
+badgeHeart.closePath();
+
 function pointInHeart(px, py, hcx, hcy, hs) {
   const lx = (px - hcx) / hs, ly = (hcy - py) / hs;
   let inside = false;
@@ -726,7 +736,7 @@ function hitTest(px, py) {
     for (const n of notes) {
       if (n.visible &&
           Math.abs(px - n.lastX) < n.lastW / 2 + 10 &&
-          py > n.lastY - n.lastH - 8 && py < n.lastY + 10) return { type: "note", n };
+          Math.abs(py - n.lastY) < n.lastH / 2 + 8) return { type: "note", n };
     }
   }
   // 5. the big heart
@@ -1335,28 +1345,32 @@ function frame(nowMs) {
       const flash = fk >= 0 && fk < 1 ? Math.sin(fk * Math.PI) : 0;
       const scale = (n.hover ? 1.15 : 1) + flash * 1.1;
       const fontPx = Math.max(n.size * pr.s, W < 600 ? 12 : 8) * scale;
-      /* the words LIE on the galaxy plane: follow the orbit tangent + foreshorten */
-      const prT = project(n.r * Math.cos(n.a + 0.06), n.h, n.r * Math.sin(n.a + 0.06));
-      let ang = Math.atan2(prT.y - pr.y, prT.x - pr.x);
-      if (ang > Math.PI / 2) ang -= Math.PI;      // never upside-down
-      if (ang < -Math.PI / 2) ang += Math.PI;
-      const squash = 0.45 + 0.25 * Math.abs(cosT);
       ctx.globalAlpha = Math.min(notesFade * depth * 0.9 + flash * 0.6, 1);
-      ctx.fillStyle = flash > 0 ? "#ffffff" : "#ffb9d9";
+      ctx.font = `600 ${fontPx}px 'Courier New', monospace`;
+      const textW = ctx.measureText(n.text).width;
+      /* the word rides inside a glowing heart badge, upright, orbiting */
+      const sxB = (textW / 2 + fontPx * 0.9) / 16;
+      const syB = (fontPx * 2.6) / 30;
+      ctx.save();
+      ctx.translate(pr.x, pr.y - fontPx * 0.15);
+      ctx.scale(sxB, syB);
+      ctx.fillStyle = `rgba(255,45,120,${0.10 + flash * 0.25})`;
+      ctx.fill(badgeHeart);
+      ctx.lineWidth = 1.6 / Math.max((sxB + syB) / 2, 0.001);
+      ctx.strokeStyle = flash > 0 ? "#ffffff" : "#ff7fb6";
+      ctx.stroke(badgeHeart);
+      ctx.restore();
+      ctx.fillStyle = flash > 0 ? "#ffffff" : "#ffd0e5";
       ctx.shadowColor = "#ff2d78";
       ctx.shadowBlur = 10 + flash * 22 + (n.hover ? 8 : 0);
-      ctx.font = `600 ${fontPx}px 'Courier New', monospace`;
       ctx.textAlign = "center";
-      ctx.save();
-      ctx.translate(pr.x, pr.y);
-      ctx.rotate(ang);
-      ctx.scale(1, squash);
-      ctx.fillText(n.text, 0, 0);
-      ctx.restore();
-      n.lastX = pr.x; n.lastY = pr.y;
-      n.lastW = ctx.measureText(n.text).width; n.lastH = Math.max(fontPx * squash, 14);
-      n.visible = true;
+      ctx.textBaseline = "middle";
+      ctx.fillText(n.text, pr.x, pr.y);
+      ctx.textBaseline = "alphabetic";
       ctx.shadowBlur = 0;
+      n.lastX = pr.x; n.lastY = pr.y;
+      n.lastW = textW + fontPx * 1.8; n.lastH = fontPx * 2.6;
+      n.visible = true;
     }
   }
 
