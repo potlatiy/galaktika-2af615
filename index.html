@@ -1344,32 +1344,25 @@ function frame(nowMs) {
       const fk = (now - n.flashT) / 0.8;
       const flash = fk >= 0 && fk < 1 ? Math.sin(fk * Math.PI) : 0;
       const scale = (n.hover ? 1.15 : 1) + flash * 1.1;
-      const fontPx = Math.max(n.size * pr.s, W < 600 ? 12 : 8) * scale;
-      ctx.globalAlpha = Math.min(notesFade * depth * 0.9 + flash * 0.6, 1);
-      ctx.font = `600 ${fontPx}px 'Courier New', monospace`;
-      const textW = ctx.measureText(n.text).width;
-      /* the word rides inside a glowing heart badge, upright, orbiting */
-      const sxB = (textW / 2 + fontPx * 0.9) / 16;
-      const syB = (fontPx * 2.6) / 30;
+      /* a neat glowing heart, no text — the word appears in the tap popup */
+      const sizePx = Math.max(n.size * pr.s, W < 600 ? 11 : 9) * scale;
+      const beatN = 1 + 0.06 * Math.sin(now * 2 + n.r); // each heart pulses on its own
+      const kB = (sizePx / 14) * beatN;
+      ctx.globalAlpha = Math.min(notesFade * depth * 0.95 + flash * 0.5, 1);
+      ctx.shadowColor = "#ff2d78";
+      ctx.shadowBlur = 12 + flash * 25 + (n.hover ? 10 : 0);
       ctx.save();
-      ctx.translate(pr.x, pr.y - fontPx * 0.15);
-      ctx.scale(sxB, syB);
-      ctx.fillStyle = `rgba(255,45,120,${0.10 + flash * 0.25})`;
+      ctx.translate(pr.x, pr.y);
+      ctx.scale(kB, kB);
+      ctx.fillStyle = flash > 0 ? "rgba(255,255,255,0.85)" : "rgba(255,45,120,0.4)";
       ctx.fill(badgeHeart);
-      ctx.lineWidth = 1.6 / Math.max((sxB + syB) / 2, 0.001);
-      ctx.strokeStyle = flash > 0 ? "#ffffff" : "#ff7fb6";
+      ctx.strokeStyle = flash > 0 ? "#ffffff" : "#ffb3d1";
+      ctx.lineWidth = 1.8 / kB;
       ctx.stroke(badgeHeart);
       ctx.restore();
-      ctx.fillStyle = flash > 0 ? "#ffffff" : "#ffd0e5";
-      ctx.shadowColor = "#ff2d78";
-      ctx.shadowBlur = 10 + flash * 22 + (n.hover ? 8 : 0);
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(n.text, pr.x, pr.y);
-      ctx.textBaseline = "alphabetic";
       ctx.shadowBlur = 0;
       n.lastX = pr.x; n.lastY = pr.y;
-      n.lastW = textW + fontPx * 1.8; n.lastH = fontPx * 2.6;
+      n.lastW = Math.max(36 * kB, 30); n.lastH = Math.max(32 * kB, 26);
       n.visible = true;
     }
   }
