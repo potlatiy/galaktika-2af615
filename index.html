@@ -309,7 +309,7 @@ const CONFIG = {
   // Музыка включится, когда она нажмёт кнопку. Нет файла — будет тишина.
   music: "music.mp3",
 
-  galaxyParticles: 6400,
+  galaxyParticles: 8800,
   heartParticles: 2200,
 };
 
@@ -330,7 +330,7 @@ function resize() {
   canvas.width = W * DPR; canvas.height = H * DPR;
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  CX = W / 2; CY = H * 0.5;
+  CX = W / 2; CY = H * 0.54; // black hole sits low, disk fills the lower frame
   FOV = Math.min(W, H) * 0.95;
 
   /* vignette: corners fall into darkness, the eye stays on the core/heart */
@@ -363,8 +363,8 @@ if (window.visualViewport) visualViewport.addEventListener("resize", resize);
 /* Camera: slowly ORBITS the galaxy in 3D — yaw around the disk,
    breathing tilt and zoom, plus a touch of pointer parallax */
 const CAM_DIST = 640;
-let camYaw = 0, camTilt = 1.02, camZoom = 1;
-let cosT = Math.cos(1.02), sinT = Math.sin(1.02);
+let camYaw = 0, camTilt = 1.22, camZoom = 1; // low camera: the disk sweeps to the horizon
+let cosT = Math.cos(1.22), sinT = Math.sin(1.22);
 let effYaw = 0;
 let parTX = 0, parTY = 0, parX = 0, parY = 0;
 /* 4D controls: drag-to-spin (with inertia), pinch-to-zoom */
@@ -391,17 +391,17 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 /* ============================================================
    Galaxy particles — spiral arms around a black-hole core
    ============================================================ */
-const GALAXY_R = 330;
+const GALAXY_R = 460; // the disk sweeps past the screen edges, like the reference
 
-/* radius-graded astrophoto palette: hue encodes energy/distance —
-   white-gold core → rose → hot pink arms → violet rim → far dust */
+/* radius-graded astrophoto palette, hot crimson edition —
+   white-gold core → rose → hot pink → crimson arms → deep dust */
 function bandColor(r) {
   if (Math.random() < 0.1) return "#ffffff";
-  if (r < 40)  return pick(["#fff3e0", "#ffffff", "#ffe9c9"]);
-  if (r < 120) return pick(["#ffd7ea", "#ff9ecf", "#ff5ca8"]);
-  if (r < 220) return pick(["#ff2d78", "#e0409a", "#ff9ecf"]);
-  if (r < 290) return pick(["#c85cff", "#9a6cff", "#ff5ca8"]);
-  return pick(["#9a6cff", "#5a3f8f", "#c9b8ff"]);
+  if (r < 45)  return pick(["#fff3e0", "#ffffff", "#ffe9c9"]);
+  if (r < 150) return pick(["#ffd7ea", "#ff9ecf", "#ff5ca8"]);
+  if (r < 280) return pick(["#ff2d78", "#e0409a", "#ff4d8f"]);
+  if (r < 380) return pick(["#d61f6f", "#b3225c", "#ff5ca8"]);
+  return pick(["#9a6cff", "#8a1f4a", "#c9b8ff"]);
 }
 
 /* volumetric structure: central bulge (oblate ellipsoid) + thin flared
@@ -409,20 +409,21 @@ function bandColor(r) {
 const galaxy = [];
 for (let i = 0; i < CONFIG.galaxyParticles; i++) {
   const kindRoll = i % 100;
-  const kind = kindRoll < 18 ? "bulge" : kindRoll < 94 ? "disk" : "halo";
+  const kind = kindRoll < 14 ? "bulge" : kindRoll < 96 ? "disk" : "halo";
   let r, angle, h, glow = 1;
   if (kind === "bulge") {
-    r = Math.pow(Math.random(), 2) * 70 + 4;
+    r = Math.pow(Math.random(), 2) * 80 + 4;
     angle = rnd(0, Math.PI * 2);
-    h = gauss() * 34 * Math.sqrt(Math.max(1 - (r / 75) ** 2, 0));
+    h = gauss() * 34 * Math.sqrt(Math.max(1 - (r / 85) ** 2, 0));
   } else if (kind === "disk") {
     r = Math.pow(Math.random(), 0.65) * GALAXY_R + 6;
     const armOff = gauss();
-    angle = (i % 2) * Math.PI + r * 0.016 + armOff * (0.28 + r * 0.0012);
+    /* tighter wind + narrower scatter = sharply drawn arms over a dust carpet */
+    angle = (i % 2) * Math.PI + r * 0.018 + armOff * (0.17 + r * 0.0008);
     h = gauss() * (3 + 26 * Math.pow(r / GALAXY_R, 1.7));
-    glow = 0.55 + 0.45 * Math.exp(-2.2 * armOff * armOff); // arms carry the light
+    glow = 0.45 + 0.55 * Math.exp(-2.8 * armOff * armOff); // bright arms over a dense dust carpet
   } else {
-    r = rnd(60, 335);
+    r = rnd(80, 470);
     angle = rnd(0, Math.PI * 2);
     h = gauss() * 80;
   }
@@ -449,7 +450,7 @@ for (let i = 0; i < CONFIG.galaxyParticles; i++) {
 /* ============================================================
    The HEART — a living, breathing 3D particle heart
    ============================================================ */
-const HEART_Y = 330, HEART_SCALE = 6.6, HEART_THICK = 24;
+const HEART_Y = 470, HEART_SCALE = 8.2, HEART_THICK = 24; // heart rides high above the disk
 function heartPoint(t, u) {
   return {
     x: 16 * Math.pow(Math.sin(t), 3) * u * HEART_SCALE,
@@ -466,7 +467,7 @@ for (let i = 0; i < CONFIG.heartParticles; i++) {
     hz: edge ? rnd(-6, 6) : rnd(-1, 1) * HEART_THICK * rnd(0.4, 1), // 3D volume
     tDrift: edge ? rnd(-0.035, 0.035) : rnd(-0.07, 0.07),           // slow flow along the curve
     size: edge ? rnd(1.6, 3.2) : rnd(1.2, 2.4),
-    color: edge ? pick(["#ff9ecf", "#ffffff", "#ff5ca8"]) : pick(["#ff2d78", "#e0409a", "#ff5ca8"]),
+    color: edge ? pick(["#ff9ecf", "#ffffff", "#ff5ca8"]) : pick(["#ff2d78", "#e0409a", "#e01f54", "#ff5ca8"]),
     tw: rnd(0, Math.PI * 2), twSpeed: rnd(2, 6),
     delay: (i / CONFIG.heartParticles) * 2.6 + rnd(0, 0.4),
     travel: rnd(0.9, 1.5),
@@ -529,10 +530,10 @@ const notes = CONFIG.loveNotes.map((item, i) => ({
   text: typeof item === "string" ? item : item.word,
   compliment: typeof item === "string" ? "" : (item.compliment || ""),
   photo: typeof item === "string" ? "" : (item.photo || ""),
-  r: rnd(150, 300),
+  r: rnd(260, 450), // out at the disk rim, like the reference
   a: (i / CONFIG.loveNotes.length) * Math.PI * 2,
   speed: rnd(0.05, 0.11) * (Math.random() < 0.5 ? 1 : -1),
-  size: rnd(13, 19),
+  size: rnd(15, 22),
   h: rnd(4, 26),
   flashT: -9, hover: false,
   lastX: -999, lastY: -999, lastW: 0, lastH: 0, visible: false,
@@ -540,7 +541,7 @@ const notes = CONFIG.loveNotes.map((item, i) => ({
 
 /* Small hearts hovering over the disk — interactable (they pop!) */
 const floaters = Array.from({ length: 18 }, () => ({
-  r: rnd(80, 310), a: rnd(0, Math.PI * 2),
+  r: rnd(100, 430), a: rnd(0, Math.PI * 2),
   speed: rnd(0.04, 0.1),
   h: rnd(15, 60), bob: rnd(0, Math.PI * 2),
   emoji: pick(["❤️", "💖", "💗", "💕", "💍", "👅", "🔨"]),
@@ -596,9 +597,9 @@ const bgStars = Array.from({ length: 340 }, () => {
 /* Nebula clouds — glowing colour fields on THREE height layers, so they
    parallax against each other and the disk as the camera orbits */
 const nebulae = Array.from({ length: 7 }, (_, i) => ({
-  r: rnd(70, 260), a: rnd(0, Math.PI * 2),
+  r: rnd(90, 380), a: rnd(0, Math.PI * 2),
   h: i % 3 === 0 ? rnd(40, 70) : i % 3 === 1 ? rnd(-50, -20) : rnd(-15, 30),
-  size: rnd(90, 170),
+  size: rnd(110, 200),
   rgb: pick(["255,60,140", "190,80,255", "255,120,180", "150,90,255"]),
   alpha: rnd(0.07, 0.13),
   pulse: rnd(0, Math.PI * 2),
@@ -971,7 +972,7 @@ function frame(nowMs) {
     inertiaVel *= Math.exp(-3 * dt);
   }
   effYaw = camYaw + parX + userYaw;
-  camTilt = Math.min(Math.max(1.02 + 0.07 * Math.sin(now * 0.13) + parY + userTilt, 0.55), 1.45);
+  camTilt = Math.min(Math.max(1.22 + 0.07 * Math.sin(now * 0.13) + parY + userTilt, 0.7), 1.45);
   camZoom = (1 + 0.035 * Math.sin(now * 0.17)) * userZoom * (0.6 + 0.4 * introK);
   cosT = Math.cos(camTilt); sinT = Math.sin(camTilt);
 
@@ -1066,10 +1067,10 @@ function frame(nowMs) {
     }
     const pr = project(x, y, z);
     /* atmospheric fog: far side dims, shrinks and cools toward violet */
-    const fogA = Math.min(Math.max((980 - pr.z) / 340, 0.30), 1);
+    const fogA = Math.min(Math.max((900 - pr.z) / 300, 0.28), 1);
     const sz = Math.max(p.size * pr.s, 0.5) * (0.75 + 0.25 * fogA);
     ctx.globalAlpha = alpha * Math.min(pr.s * 1.4, 1) * fogA;
-    ctx.fillStyle = pr.z > 760 ? p.colorFar : p.color;
+    ctx.fillStyle = pr.z > 720 ? p.colorFar : p.color;
     if (sz < 1.6) ctx.fillRect(pr.x, pr.y, sz, sz);
     else { ctx.beginPath(); ctx.arc(pr.x, pr.y, sz / 2, 0, Math.PI * 2); ctx.fill(); }
   }
@@ -1081,18 +1082,31 @@ function frame(nowMs) {
     ctx.globalAlpha = holeFade;
     ctx.fillStyle = "#000";
     ctx.beginPath();
-    ctx.ellipse(coreP.x, coreP.y, 13 * coreP.s, 13 * coreP.s * Math.abs(cosT), 0, 0, Math.PI * 2);
+    ctx.ellipse(coreP.x, coreP.y, 16 * coreP.s, 16 * coreP.s * Math.abs(cosT), 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
   }
   ctx.globalCompositeOperation = "lighter";
-  /* accretion rim: a thin hot ring hugging the black hole */
+  /* accretion disk: a bright glowing ring hugging the black hole (the reference look) */
   if (holeFade > 0) {
-    ctx.globalAlpha = holeFade * 0.35;
-    ctx.strokeStyle = "rgba(255,224,240,1)";
-    ctx.lineWidth = 1.4;
+    const sqz = Math.abs(cosT);
+    ctx.globalAlpha = holeFade * 0.22;                 // outer soft halo of the ring
+    ctx.strokeStyle = "rgba(255,140,190,1)";
+    ctx.lineWidth = 13 * coreP.s;
     ctx.beginPath();
-    ctx.ellipse(coreP.x, coreP.y, 18 * coreP.s, 18 * coreP.s * Math.abs(cosT), 0, 0, Math.PI * 2);
+    ctx.ellipse(coreP.x, coreP.y, 24 * coreP.s, 24 * coreP.s * sqz, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = holeFade * 0.65;                 // hot body of the ring
+    ctx.strokeStyle = "rgba(255,220,235,1)";
+    ctx.lineWidth = 6 * coreP.s;
+    ctx.beginPath();
+    ctx.ellipse(coreP.x, coreP.y, 22 * coreP.s, 22 * coreP.s * sqz, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = holeFade * 0.95;                 // white-hot inner edge
+    ctx.strokeStyle = "rgba(255,248,252,1)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.ellipse(coreP.x, coreP.y, 19 * coreP.s, 19 * coreP.s * sqz, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
@@ -1321,15 +1335,26 @@ function frame(nowMs) {
       const flash = fk >= 0 && fk < 1 ? Math.sin(fk * Math.PI) : 0;
       const scale = (n.hover ? 1.15 : 1) + flash * 1.1;
       const fontPx = Math.max(n.size * pr.s, W < 600 ? 12 : 8) * scale;
+      /* the words LIE on the galaxy plane: follow the orbit tangent + foreshorten */
+      const prT = project(n.r * Math.cos(n.a + 0.06), n.h, n.r * Math.sin(n.a + 0.06));
+      let ang = Math.atan2(prT.y - pr.y, prT.x - pr.x);
+      if (ang > Math.PI / 2) ang -= Math.PI;      // never upside-down
+      if (ang < -Math.PI / 2) ang += Math.PI;
+      const squash = 0.45 + 0.25 * Math.abs(cosT);
       ctx.globalAlpha = Math.min(notesFade * depth * 0.9 + flash * 0.6, 1);
       ctx.fillStyle = flash > 0 ? "#ffffff" : "#ffb9d9";
       ctx.shadowColor = "#ff2d78";
       ctx.shadowBlur = 10 + flash * 22 + (n.hover ? 8 : 0);
       ctx.font = `600 ${fontPx}px 'Courier New', monospace`;
       ctx.textAlign = "center";
-      ctx.fillText(n.text, pr.x, pr.y);
+      ctx.save();
+      ctx.translate(pr.x, pr.y);
+      ctx.rotate(ang);
+      ctx.scale(1, squash);
+      ctx.fillText(n.text, 0, 0);
+      ctx.restore();
       n.lastX = pr.x; n.lastY = pr.y;
-      n.lastW = ctx.measureText(n.text).width; n.lastH = fontPx;
+      n.lastW = ctx.measureText(n.text).width; n.lastH = Math.max(fontPx * squash, 14);
       n.visible = true;
       ctx.shadowBlur = 0;
     }
