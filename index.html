@@ -309,7 +309,7 @@ const CONFIG = {
   // Музыка включится, когда она нажмёт кнопку. Нет файла — будет тишина.
   music: "music.mp3",
 
-  galaxyParticles: 3200,
+  galaxyParticles: 6400,
   heartParticles: 2200,
 };
 
@@ -319,6 +319,8 @@ const CONFIG = {
 const canvas = document.getElementById("universe");
 const ctx = canvas.getContext("2d");
 let W, H, CX, CY, FOV, DPR;
+
+let vigCv = null, bandCv = null; // pre-rendered depth cues (vignette + galactic band)
 
 function resize() {
   DPR = Math.min(devicePixelRatio || 1, 2);
@@ -330,6 +332,29 @@ function resize() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   CX = W / 2; CY = H * 0.5;
   FOV = Math.min(W, H) * 0.95;
+
+  /* vignette: corners fall into darkness, the eye stays on the core/heart */
+  vigCv = document.createElement("canvas");
+  vigCv.width = W; vigCv.height = H;
+  const vg = vigCv.getContext("2d");
+  const vgr = vg.createRadialGradient(CX, CY * 0.92, Math.max(W, H) * 0.55, CX, CY * 0.92, Math.max(W, H) * 0.95);
+  vgr.addColorStop(0, "rgba(2,0,6,0)");
+  vgr.addColorStop(1, "rgba(2,0,6,0.42)");
+  vg.fillStyle = vgr;
+  vg.fillRect(0, 0, W, H);
+
+  /* faint diagonal galactic band behind everything */
+  bandCv = document.createElement("canvas");
+  bandCv.width = W; bandCv.height = H;
+  const bg = bandCv.getContext("2d");
+  bg.translate(CX, H * 0.42);
+  bg.rotate(-0.31);
+  bg.scale(1, 0.28);
+  const bgr = bg.createRadialGradient(0, 0, 0, 0, 0, W * 0.9);
+  bgr.addColorStop(0, "rgba(150,90,255,0.05)");
+  bgr.addColorStop(1, "rgba(150,90,255,0)");
+  bg.fillStyle = bgr;
+  bg.beginPath(); bg.arc(0, 0, W * 0.9, 0, Math.PI * 2); bg.fill();
 }
 resize();
 addEventListener("resize", resize);
@@ -367,19 +392,52 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
    Galaxy particles — spiral arms around a black-hole core
    ============================================================ */
 const GALAXY_R = 330;
+
+/* radius-graded astrophoto palette: hue encodes energy/distance —
+   white-gold core → rose → hot pink arms → violet rim → far dust */
+function bandColor(r) {
+  if (Math.random() < 0.1) return "#ffffff";
+  if (r < 40)  return pick(["#fff3e0", "#ffffff", "#ffe9c9"]);
+  if (r < 120) return pick(["#ffd7ea", "#ff9ecf", "#ff5ca8"]);
+  if (r < 220) return pick(["#ff2d78", "#e0409a", "#ff9ecf"]);
+  if (r < 290) return pick(["#c85cff", "#9a6cff", "#ff5ca8"]);
+  return pick(["#9a6cff", "#5a3f8f", "#c9b8ff"]);
+}
+
+/* volumetric structure: central bulge (oblate ellipsoid) + thin flared
+   disk with spiral arms + sparse cool halo above/below the plane */
 const galaxy = [];
 for (let i = 0; i < CONFIG.galaxyParticles; i++) {
-  const r = Math.pow(Math.random(), 0.65) * GALAXY_R + 6;
-  const arm = i % 2;
-  const angle = arm * Math.PI + r * 0.016 + gauss() * (0.28 + r * 0.0012);
+  const kindRoll = i % 100;
+  const kind = kindRoll < 18 ? "bulge" : kindRoll < 94 ? "disk" : "halo";
+  let r, angle, h, glow = 1;
+  if (kind === "bulge") {
+    r = Math.pow(Math.random(), 2) * 70 + 4;
+    angle = rnd(0, Math.PI * 2);
+    h = gauss() * 34 * Math.sqrt(Math.max(1 - (r / 75) ** 2, 0));
+  } else if (kind === "disk") {
+    r = Math.pow(Math.random(), 0.65) * GALAXY_R + 6;
+    const armOff = gauss();
+    angle = (i % 2) * Math.PI + r * 0.016 + armOff * (0.28 + r * 0.0012);
+    h = gauss() * (3 + 26 * Math.pow(r / GALAXY_R, 1.7));
+    glow = 0.55 + 0.45 * Math.exp(-2.2 * armOff * armOff); // arms carry the light
+  } else {
+    r = rnd(60, 335);
+    angle = rnd(0, Math.PI * 2);
+    h = gauss() * 80;
+  }
   const dir = { x: gauss(), y: gauss(), z: gauss() };
   const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
+  const secondHalf = i >= CONFIG.galaxyParticles / 2; // the doubled sparkles stay tiny & cheap
   galaxy.push({
-    r, angle,
-    h: gauss() * (4 + r * 0.035),
+    r, angle, h, glow,
     speed: 2.2 / (18 + r),
-    size: rnd(0.7, 2.3) * (r < 60 ? 1.3 : 1),
-    color: r < 55 ? pick(["#ffffff", "#ffd7ea", "#ff9ecf"]) : pick(PALETTE),
+    size: kind === "halo" ? rnd(0.5, 1.0)
+        : secondHalf ? rnd(0.5, 1.3)
+        : rnd(0.7, 2.3) * (r < 60 ? 1.3 : 1),
+    color: kind === "halo" ? pick(["#9a6cff", "#5a3f8f", "#c9b8ff"]) : bandColor(r),
+    colorFar: pick(["#9a6cff", "#5a3f8f"]),
+    alphaMul: kind === "halo" ? 0.5 : 1,
     tw: rnd(0, Math.PI * 2), twSpeed: rnd(1.5, 4),
     dir: { x: dir.x / dl, y: dir.y / dl, z: dir.z / dl },
     boom: rnd(160, 620),
@@ -521,19 +579,28 @@ heartPhotoImg.onerror = () => reportMissingImage(CONFIG.heartPhoto);
 if (CONFIG.heartPhoto) heartPhotoImg.src = CONFIG.heartPhoto;
 let heartPhotoOn = false, heartPhotoAlpha = 0;
 
-/* Background stars — layered by depth for parallax as the camera orbits */
-const bgStars = Array.from({ length: 220 }, () => ({
-  x: Math.random(), y: Math.random(),
-  r: rnd(0.3, 1.4), tw: rnd(0, Math.PI * 2), twSpeed: rnd(0.5, 2),
-  d: rnd(0.25, 1), // depth: far stars drift slower
-}));
+/* Background stars — three discrete depth bands for readable parallax */
+const bgStars = Array.from({ length: 340 }, () => {
+  const roll = Math.random();
+  const d = roll < 0.45 ? 0.3 : roll < 0.8 ? 0.6 : 1.0; // far / mid / near
+  return {
+    x: Math.random(), y: Math.random(), d,
+    r: d === 1.0 ? rnd(0.5, 1.7) : d === 0.6 ? rnd(0.3, 1.4) : rnd(0.3, 1.1),
+    a0: d === 1.0 ? 0.2 : d === 0.6 ? 0.15 : 0.12,
+    a1: d === 1.0 ? 0.6 : d === 0.6 ? 0.5 : 0.35,
+    c: Math.random() < 0.15 ? "#cdd6ff" : "#ffffff", // a few cool-white stars
+    tw: rnd(0, Math.PI * 2), twSpeed: rnd(0.5, 2),
+  };
+});
 
-/* Nebula clouds — soft glowing colour fields drifting through the disk */
-const nebulae = Array.from({ length: 6 }, () => ({
-  r: rnd(70, 260), a: rnd(0, Math.PI * 2), h: rnd(-15, 30),
+/* Nebula clouds — glowing colour fields on THREE height layers, so they
+   parallax against each other and the disk as the camera orbits */
+const nebulae = Array.from({ length: 7 }, (_, i) => ({
+  r: rnd(70, 260), a: rnd(0, Math.PI * 2),
+  h: i % 3 === 0 ? rnd(40, 70) : i % 3 === 1 ? rnd(-50, -20) : rnd(-15, 30),
   size: rnd(90, 170),
   rgb: pick(["255,60,140", "190,80,255", "255,120,180", "150,90,255"]),
-  alpha: rnd(0.06, 0.12),
+  alpha: rnd(0.07, 0.13),
   pulse: rnd(0, Math.PI * 2),
   drift: rnd(0.008, 0.025) * (Math.random() < 0.5 ? -1 : 1),
 }));
@@ -570,6 +637,8 @@ function spawnRing(x, y) { rings.push({ x, y, r: 8, life: 1 }); }
    Timeline
    ============================================================ */
 let started = false, T0 = 0, rot = 0, lastFrame = 0;
+/* adaptive frame governor: never let the doubled field cost smoothness */
+let perfAvg = 0.016, perfBadRun = 0, perfGoodRun = 0, perfLite = false;
 let lastHeartX = -999, lastHeartY = -999, lastHS = 1;
 let heartSurgeT = -9;
 let swayRy = 0; // current 3D sway angle of the heart
@@ -859,21 +928,30 @@ function frame(nowMs) {
   lastFrame = now;
   const T = started ? now - T0 : 0;
 
+  /* frame governor bookkeeping */
+  perfAvg += (dt - perfAvg) * 0.04;
+  if (!perfLite && perfAvg > 0.019) { if (++perfBadRun > 90) { perfLite = true; perfGoodRun = 0; } }
+  else perfBadRun = 0;
+  if (perfLite && perfAvg < 0.015) { if (++perfGoodRun > 300) { perfLite = false; perfBadRun = 0; } }
+  else perfGoodRun = 0;
+
   /* --- sky --- */
   ctx.globalCompositeOperation = "source-over";
   const sky = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.max(W, H) * 0.75);
-  sky.addColorStop(0, "#150425");
-  sky.addColorStop(0.55, "#08010f");
-  sky.addColorStop(1, "#020005");
+  sky.addColorStop(0, "#1a052c");
+  sky.addColorStop(0.45, "#0c0218");
+  sky.addColorStop(0.8, "#050010");
+  sky.addColorStop(1, "#010004");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, H);
+  if (bandCv) ctx.drawImage(bandCv, 0, 0);
 
-  ctx.fillStyle = "#fff";
   for (const s of bgStars) {
-    /* parallax: near stars drift more as the camera orbits */
+    /* parallax: three discrete depth bands shear against each other */
     const px = (((s.x * W + effYaw * 140 * s.d) % W) + W) % W;
     const py = s.y * H + parY * 220 * s.d;
-    ctx.globalAlpha = 0.15 + 0.5 * (0.5 + 0.5 * Math.sin(s.tw + now * s.twSpeed));
+    ctx.globalAlpha = s.a0 + s.a1 * (0.5 + 0.5 * Math.sin(s.tw + now * s.twSpeed));
+    ctx.fillStyle = s.c;
     ctx.fillRect(px, py, s.r, s.r);
   }
   ctx.globalAlpha = 1;
@@ -903,14 +981,25 @@ function frame(nowMs) {
   const coreP = project(0, 0, 0);
   const coreFade = smooth((T - 1.2) / 2);
   if (coreFade > 0) {
-    const g = ctx.createRadialGradient(coreP.x, coreP.y, 0, coreP.x, coreP.y, 90 * coreP.s);
+    /* core bloom stack: hot white-gold heart → rose body → cool violet haze */
+    let g = ctx.createRadialGradient(coreP.x, coreP.y, 0, coreP.x, coreP.y, 26 * coreP.s);
+    g.addColorStop(0, `rgba(255,243,224,${0.55 * coreFade})`);
+    g.addColorStop(1, "rgba(255,243,224,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(coreP.x, coreP.y, 26 * coreP.s, 0, Math.PI * 2); ctx.fill();
+
+    g = ctx.createRadialGradient(coreP.x, coreP.y, 0, coreP.x, coreP.y, 90 * coreP.s);
     g.addColorStop(0, `rgba(255,120,180,${0.5 * coreFade})`);
     g.addColorStop(0.35, `rgba(255,45,120,${0.28 * coreFade})`);
     g.addColorStop(1, "rgba(255,45,120,0)");
     ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(coreP.x, coreP.y, 90 * coreP.s, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(coreP.x, coreP.y, 90 * coreP.s, 0, Math.PI * 2); ctx.fill();
+
+    g = ctx.createRadialGradient(coreP.x, coreP.y, 0, coreP.x, coreP.y, 210 * coreP.s);
+    g.addColorStop(0, `rgba(154,108,255,${0.10 * coreFade})`);
+    g.addColorStop(1, "rgba(154,108,255,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(coreP.x, coreP.y, 210 * coreP.s, 0, Math.PI * 2); ctx.fill();
 
     /* nebula clouds drifting through the disk */
     for (const nb of nebulae) {
@@ -935,18 +1024,30 @@ function frame(nowMs) {
   for (const m of meteors) {
     m.x += m.vx * dt; m.y += m.vy * dt; m.life -= dt * 1.4;
     if (m.life <= 0) continue;
-    ctx.globalAlpha = m.life * 0.8;
-    ctx.strokeStyle = "#ffd7ea";
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(m.x, m.y);
-    ctx.lineTo(m.x - m.vx * 0.09, m.y - m.vy * 0.09);
-    ctx.stroke();
+    /* hot white head, rose tail fading to nothing */
+    const tx = m.x - m.vx * 0.09, ty = m.y - m.vy * 0.09;
+    const mg = ctx.createLinearGradient(m.x, m.y, tx, ty);
+    mg.addColorStop(0, "rgba(255,255,255,0.95)");
+    mg.addColorStop(0.4, "rgba(255,140,200,0.4)");
+    mg.addColorStop(1, "rgba(255,140,200,0)");
+    ctx.strokeStyle = mg;
+    ctx.globalAlpha = m.life * 0.35;
+    ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.globalAlpha = m.life * 0.9;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.arc(m.x, m.y, 1.25, 0, Math.PI * 2); ctx.fill();
   }
   meteors = meteors.filter(m => m.life > 0);
 
   /* --- galaxy particles: big bang → converge → orbit --- */
-  for (const p of galaxy) {
+  const halfCount = CONFIG.galaxyParticles / 2;
+  for (let gi = 0; gi < galaxy.length; gi++) {
+    /* frame governor: on a slow device, thin out the doubled half */
+    if (perfLite && gi >= halfCount && (gi & 3) === 3) continue;
+    const p = galaxy[gi];
     let x, y, z, alpha;
     if (T < p.explodeDur) {
       const k = easeOutCubic(T / p.explodeDur);
@@ -955,16 +1056,20 @@ function frame(nowMs) {
     } else {
       const k = smooth((T - p.explodeDur) / p.settleDur);
       const a = p.angle + rot + p.speed * Math.max(T - p.explodeDur, 0) * 14;
-      const tx = p.r * Math.cos(a), tz = p.r * Math.sin(a), ty = p.h;
+      /* micro-breathing: the disk is alive, rotation speed untouched */
+      const rr = p.r * (1 + 0.012 * Math.sin(now * 0.35 + p.tw));
+      const tx = rr * Math.cos(a), tz = rr * Math.sin(a), ty = p.h;
       x = p.dir.x * p.boom + (tx - p.dir.x * p.boom) * k;
       y = p.dir.y * p.boom + (ty - p.dir.y * p.boom) * k;
       z = p.dir.z * p.boom + (tz - p.dir.z * p.boom) * k;
-      alpha = 0.55 + 0.45 * Math.sin(p.tw + now * p.twSpeed);
+      alpha = (0.55 + 0.45 * Math.sin(p.tw + now * p.twSpeed)) * p.glow * p.alphaMul;
     }
     const pr = project(x, y, z);
-    const sz = Math.max(p.size * pr.s, 0.5);
-    ctx.globalAlpha = alpha * Math.min(pr.s * 1.4, 1);
-    ctx.fillStyle = p.color;
+    /* atmospheric fog: far side dims, shrinks and cools toward violet */
+    const fogA = Math.min(Math.max((980 - pr.z) / 340, 0.30), 1);
+    const sz = Math.max(p.size * pr.s, 0.5) * (0.75 + 0.25 * fogA);
+    ctx.globalAlpha = alpha * Math.min(pr.s * 1.4, 1) * fogA;
+    ctx.fillStyle = pr.z > 760 ? p.colorFar : p.color;
     if (sz < 1.6) ctx.fillRect(pr.x, pr.y, sz, sz);
     else { ctx.beginPath(); ctx.arc(pr.x, pr.y, sz / 2, 0, Math.PI * 2); ctx.fill(); }
   }
@@ -981,6 +1086,16 @@ function frame(nowMs) {
     ctx.globalAlpha = 1;
   }
   ctx.globalCompositeOperation = "lighter";
+  /* accretion rim: a thin hot ring hugging the black hole */
+  if (holeFade > 0) {
+    ctx.globalAlpha = holeFade * 0.35;
+    ctx.strokeStyle = "rgba(255,224,240,1)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.ellipse(coreP.x, coreP.y, 18 * coreP.s, 18 * coreP.s * Math.abs(cosT), 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 
   /* ==========================================================
      THE HEART — assembly, 3D sway, beat, ripples, ring, glints
@@ -1181,6 +1296,14 @@ function frame(nowMs) {
     ctx.fillRect(d.x, d.y, 1.6, 1.6);
   }
   dust = dust.filter(d => d.life > 0);
+
+  /* --- vignette: below the readable UI layer, above the deep space --- */
+  if (vigCv) {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.drawImage(vigCv, 0, 0);
+    ctx.globalCompositeOperation = "lighter";
+  }
 
   /* --- orbiting love notes (interactable) --- */
   const notesFade = smooth((T - NOTES_START) / 2);
