@@ -99,6 +99,33 @@
     text-shadow: 0 0 18px rgba(255, 110, 170, 0.5);
   }
 
+  /* the same counter floating over the universe itself */
+  #scene-counter {
+    position: fixed;
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    left: 0; right: 0;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 2.5s ease;
+  }
+  #scene-counter.show { opacity: 1; }
+  #scene-counter .sc-label {
+    color: rgba(185, 166, 255, 0.6);
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  #scene-counter .sc-value {
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic;
+    color: #ffd9ea;
+    font-size: clamp(12px, 3vw, 15px);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 12px rgba(255, 110, 170, 0.55);
+  }
+
   .img-warn {
     color: #ff8f8f;
     font-size: 12px;
@@ -205,6 +232,12 @@
 <body>
 
 <canvas id="universe"></canvas>
+
+<!-- live relationship counter over the universe (fades in with the words) -->
+<div id="scene-counter">
+  <div class="sc-label" id="sc-label">мы вместе уже</div>
+  <div class="sc-value" id="sc-value"></div>
+</div>
 
 <div id="intro">
   <div class="card">
@@ -372,6 +405,9 @@ function resize() {
   /* visualViewport is the honest size on iPhone (toolbars come and go) */
   W = window.visualViewport ? Math.round(visualViewport.width) : innerWidth;
   H = window.visualViewport ? Math.round(visualViewport.height) : innerHeight;
+  /* a transiently collapsed viewport (0×0) would bake zero-size sprites and
+     make every drawImage throw — clamp, a resize will re-bake the real size */
+  W = Math.max(W, 1); H = Math.max(H, 1);
   canvas.width = W * DPR; canvas.height = H * DPR;
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1082,7 +1118,10 @@ document.getElementById("enter-btn").textContent = CONFIG.buttonText;
    ============================================================ */
 const lcValue = document.getElementById("lc-value");
 const lcLabel = document.getElementById("lc-label");
+const scValue = document.getElementById("sc-value");
+const scLabel = document.getElementById("sc-label");
 if (lcLabel && CONFIG.loveStartLabel) lcLabel.textContent = CONFIG.loveStartLabel;
+if (scLabel && CONFIG.loveStartLabel) scLabel.textContent = CONFIG.loveStartLabel;
 const LOVE_START = (a => new Date(a[0], (a[1] || 1) - 1, a[2] || 1, a[3] || 0, a[4] || 0, 0))(
   CONFIG.loveStart || [2026, 7, 14, 23, 47]);
 const ruPlural = (n, one, few, many) => {
@@ -1090,10 +1129,14 @@ const ruPlural = (n, one, few, many) => {
   return (m10 === 1 && m100 !== 11) ? one
        : (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) ? few : many;
 };
+const setLoveText = t => {
+  if (lcValue) lcValue.textContent = t;
+  if (scValue) scValue.textContent = t;
+};
 function updateLoveCounter() {
-  if (!lcValue) return;
+  if (!lcValue && !scValue) return;
   const nowD = new Date();
-  if (nowD <= LOVE_START) { lcValue.textContent = "0 секунд — всё только начинается ✨"; return; }
+  if (nowD <= LOVE_START) { setLoveText("0 секунд — всё только начинается ✨"); return; }
   /* calendar-honest years (leap-year safe), then the remainder in d/h/m/s */
   let years = nowD.getFullYear() - LOVE_START.getFullYear();
   const anniv = new Date(LOVE_START.getTime());
@@ -1110,10 +1153,26 @@ function updateLoveCounter() {
   parts.push(`${h} ${ruPlural(h, "час", "часа", "часов")}`);
   parts.push(`${m} ${ruPlural(m, "минута", "минуты", "минут")}`);
   parts.push(`${s} ${ruPlural(s, "секунда", "секунды", "секунд")}`);
-  lcValue.textContent = parts.join(" · ");
+  setLoveText(parts.join(" · "));
 }
 updateLoveCounter();
-setInterval(updateLoveCounter, 1000);
+setInterval(() => {
+  updateLoveCounter();
+  /* refresh the words' no-fly zone once a second (notch-safe, resize-safe) */
+  if (sceneCounterOn) {
+    const sc = document.getElementById("scene-counter");
+    if (sc) scGuard = sc.getBoundingClientRect().bottom + 10;
+  }
+}, 1000);
+/* the scene copy fades in together with the orbiting words */
+let sceneCounterOn = false;
+let scGuard = 46; // bottom edge of the scene counter — words dissolve above it
+function maybeShowSceneCounter(T) {
+  if (sceneCounterOn || T < NOTES_START) return;
+  sceneCounterOn = true;
+  const sc = document.getElementById("scene-counter");
+  if (sc) sc.classList.add("show");
+}
 
 document.getElementById("enter-btn").addEventListener("click", () => {
   document.getElementById("intro").classList.add("hidden");
@@ -1388,6 +1447,7 @@ function frameBody(nowMs) {
   const dt = Math.min(now - lastFrame, 0.05);
   lastFrame = now;
   const T = started ? now - T0 : 0;
+  maybeShowSceneCounter(T);
 
   /* frame governor bookkeeping */
   perfAvg += (dt - perfAvg) * 0.04;
@@ -1407,8 +1467,8 @@ function frameBody(nowMs) {
 
   /* --- sky (pre-baked) --- */
   ctx.globalCompositeOperation = "source-over";
-  ctx.drawImage(skyCv, 0, 0);
-  if (bandCv) ctx.drawImage(bandCv, 0, 0);
+  if (skyCv && skyCv.width) ctx.drawImage(skyCv, 0, 0);
+  if (bandCv && bandCv.width) ctx.drawImage(bandCv, 0, 0);
 
   for (const s of bgStars) {
     /* parallax: three discrete depth bands shear against each other */
@@ -1958,7 +2018,7 @@ function frameBody(nowMs) {
          a confession must never sit on top of the typed line */
       const edgeFadeX = Math.min(Math.max((Math.min(pr.x, W - pr.x) - textW * 0.5) / 60, 0), 1);
       const edgeFadeY = Math.min(Math.max((H - 110 - pr.y) / 50, 0), 1) *
-                        Math.min(Math.max((pr.y - 26) / 40, 0), 1);
+                        Math.min(Math.max((pr.y - scGuard) / 44, 0), 1);
       const edgeFade = edgeFadeX * edgeFadeY;
       ctx.globalAlpha = Math.min((notesFade * depth * 0.9 * shimmer + flash * 0.6) * edgeFade, 1);
       ctx.shadowColor = "#ff2d78";
